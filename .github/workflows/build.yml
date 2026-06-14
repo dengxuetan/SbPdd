@@ -29,18 +29,15 @@ jobs:
             -dname "CN=PddNoUpdate, OU=Dev, O=Dev, L=City, S=State, C=CN"
 
       - name: Make gradlew executable
-        run: chmod +x ./gradlew || true
-
-      - name: Wrapper
-        run: gradle wrapper --gradle-version 8.4
+        run: chmod +x ./gradlew
 
       - name: Build Release APK
         env:
-          KEYSTORE_PATH: ${{ github.workspace }}/release.keystore
+          KEYSTORE_PATH: ${ github.workspace }/release.keystore
           KEYSTORE_PASSWORD: "123456"
           KEY_ALIAS: "pdd"
           KEY_PASSWORD: "123456"
-        run: ./gradlew assembleRelease --no-daemon
+        run: ./gradlew assembleRelease --no-daemon --stacktrace
 
       - name: Upload APK
         uses: actions/upload-artifact@v4
