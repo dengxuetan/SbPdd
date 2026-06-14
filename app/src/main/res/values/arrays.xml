@@ -1,6 +1,7 @@
 <resources>
     <string-array name="xposed_scope">
-        <item>com.xunmeng.merchant</item>
         <item>com.xunmeng.pinduoduo</item>
+        <item>com.xunmeng.merchant</item>
+        <item>com.xunmeng.pinduoduo.lifestyle</item>
     </string-array>
 </resources>
