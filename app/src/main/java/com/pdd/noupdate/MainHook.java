@@ -3,6 +3,7 @@ package com.pdd.noupdate;
 import java.lang.reflect.Method;
 import de.robv.android.xposed.IXposedHookLoadPackage;
 import de.robv.android.xposed.XC_MethodHook;
+import de.robv.android.xposed.XC_MethodReplacement;
 import de.robv.android.xposed.XposedBridge;
 import de.robv.android.xposed.XposedHelpers;
 import de.robv.android.xposed.callbacks.XC_LoadPackage;
@@ -14,6 +15,10 @@ public class MainHook implements IXposedHookLoadPackage {
     private static final String FAKE_JSON =
             "{\"server_time\":0," +
             "\"upgrade_type\":\"NoUpgrade\"," +
+            "\"build_no\":\"\"," +
+            "\"version\":\"\"," +
+            "\"url\":\"\"," +
+            "\"title\":\"\"," +
             "\"silence\":\"Always\"," +
             "\"second_detect\":false," +
             "\"alert_period\":999999," +
@@ -27,9 +32,12 @@ public class MainHook implements IXposedHookLoadPackage {
     };
 
     private static boolean shouldBlock(String url) {
+        if (url == null) return false;
         if (url.contains("meta.pinduoduo.com") && url.contains("upgrade")) return true;
         if (url.contains("/api/app/checkupdate")) return true;
         if (url.contains("upgrade.pinduoduo.com")) return true;
+        // 拼多多 volantis 升级平台
+        if (url.contains("volantis") && url.contains("upgrade")) return true;
         return false;
     }
 
@@ -41,9 +49,13 @@ public class MainHook implements IXposedHookLoadPackage {
         if (!match) return;
 
         XposedBridge.log(TAG + "loaded into " + pkg);
-        hookOkHttp(lpparam.classLoader);
+
+        ClassLoader cl = lpparam.classLoader;
+        hookOkHttp(cl);
+        hookUpgradeDialog(cl);   // 兜底：直接干掉弹窗
     }
 
+    // ===================== 1) OkHttp 拦截 =====================
     private void hookOkHttp(final ClassLoader cl) {
         Class<?> realCall = XposedHelpers.findClassIfExists(
                 "okhttp3.internal.connection.RealCall", cl);
@@ -73,14 +85,14 @@ public class MainHook implements IXposedHookLoadPackage {
                     if (resp == null) return;
                     Object req = XposedHelpers.callMethod(resp, "request");
                     String url = XposedHelpers.callMethod(req, "url").toString();
-
                     if (!shouldBlock(url)) return;
 
                     XposedBridge.log(TAG + "intercept: " + url);
-                    param.setResult(buildFakeResponse(cl, resp));
-                    XposedBridge.log(TAG + "response replaced -> NoUpgrade");
+                    Object fake = buildFakeResponse(cl, resp);
+                    param.setResult(fake);
+                    XposedBridge.log(TAG + "response replaced (len=" + FAKE_JSON.length() + ")");
                 } catch (Throwable t) {
-                    XposedBridge.log(TAG + "err in afterHook: " + t);
+                    XposedBridge.log(TAG + "okhttp err: " + t);
                 }
             }
         });
@@ -113,5 +125,32 @@ public class MainHook implements IXposedHookLoadPackage {
         XposedHelpers.callMethod(builder, "message", "OK");
         XposedHelpers.callMethod(builder, "body", body);
         return XposedHelpers.callMethod(builder, "build");
+    }
+
+    // ===================== 2) 兜底：直接干掉升级弹窗 =====================
+    private void hookUpgradeDialog(ClassLoader cl) {
+        String[] candidates = {
+                "com.xunmeng.pinduoduo.volantis.upgrade.UpgradeManager",
+                "com.xunmeng.pinduoduo.upgrade.UpgradeManager",
+                "com.xunmeng.merchant.upgrade.UpgradeDialog",
+                "com.xunmeng.pinduoduo.volantis.VolantisCenter",
+                "com.xunmeng.pinduoduo.volantis.Volantis",
+        };
+        for (String name : candidates) {
+            Class<?> cls = XposedHelpers.findClassIfExists(name, cl);
+            if (cls == null) continue;
+            XposedBridge.log(TAG + "found upgrade class: " + name);
+            // 把所有 show/checkUpdate/notifyUpgrade 类的方法全替换成 no-op
+            for (Method m : cls.getDeclaredMethods()) {
+                String n = m.getName().toLowerCase();
+                if (n.contains("show") || n.contains("check") || n.contains("notify")
+                        || n.contains("upgrade") || n.contains("update")) {
+                    try {
+                        XposedBridge.hookMethod(m, XC_MethodReplacement.DO_NOTHING);
+                        XposedBridge.log(TAG + "neutralized: " + name + "#" + m.getName());
+                    } catch (Throwable ignore) {}
+                }
+            }
+        }
     }
 }
