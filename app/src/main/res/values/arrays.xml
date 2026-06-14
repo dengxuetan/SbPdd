@@ -1,0 +1,6 @@
+<resources>
+    <string-array name="xposed_scope">
+        <item>com.xunmeng.merchant</item>
+        <item>com.xunmeng.pinduoduo</item>
+    </string-array>
+</resources>
